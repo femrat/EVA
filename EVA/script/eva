@@ -1,0 +1,448 @@
+#!/bin/bash
+
+# find BASE_PATH
+export BASE_PATH=`pwd`
+if [ ! -x "$BASE_PATH/script/eva" ]; then
+	while [ ! -x "$BASE_PATH/script/eva" ]; do
+		BASE_PATH=$(dirname "$BASE_PATH")
+		if [ "$BASE_PATH" == "/" ]; then
+			echo "`pwd` does not have a valid EVA system"
+			exit 2
+		fi
+	done
+fi
+
+if [ "$BASE_PATH" != $(cd `dirname $0`; dirname `pwd`) ]; then
+	if [ "$(sha256sum $0 | cut -d' ' -f1)" != "$(sha256sum $BASE_PATH/script/eva | cut -d' ' -f1)" ]; then
+		echo "ERROR: the executing eva ($0) is different to which should be executed ($BASE_PATH/script/eva)"
+		echo "EVA terminated"
+		exit 3
+	fi
+fi
+
+# load config
+EVACONFIG=$BASE_PATH/script/config
+touch "$EVACONFIG"
+. "$EVACONFIG"
+
+if [ -z "$MACHINE" ]; then
+	MACHINE=`hostname | tr -d '\n' | tr '[:cntrl:][:blank:]-' '_'`
+	echo -e '\n# MACHINE: The ID of this machine' >> $EVACONFIG
+	echo "MACHINE='$MACHINE'" >> $EVACONFIG
+	echo "** WARNING: MACHINE in EVA config is missing. The default MACHINE has been generated."
+	echo "** Default MACHINE='$MACHINE'"
+fi
+export MACHINE
+
+unset EVACONFIG
+
+# prepare log
+EVALOGFILE="$BASE_PATH/log/eva.log"
+export EVALOGPATH="$BASE_PATH/log"
+mkdir -p "$EVALOGPATH"
+
+# functions
+
+parseProjDirectory() {
+	PROJ=$(basename `pwd` | cut -d'-' -f1)
+	PARA=$(basename `pwd` | cut -d'-' -f2 | sed 's/^p//')
+	if [ "$PROJ-p$PARA" != "$(basename `pwd`)" ]; then
+		echo "ERROR: `pwd` is an invalid name for a project"
+		return 1
+	fi
+}
+
+isInProjectDirectory() {
+	 [ "$(dirname `pwd`)" == "$BASE_PATH/eval" ] && return 0 || return 1
+}
+
+isInEvalDirectory() {
+	[ "$(pwd)" == "$BASE_PATH/eval" ] && return 0 || return 1
+}
+
+mustInProjectDirectory() {
+	if ! isInProjectDirectory; then
+		echo "add function should be in project directory, like $BASE_PATH/eval/proj1-p2"
+		return 1;
+	fi
+	return 0;
+}
+
+markReadOnly() {
+	# should only be called in eval/proj1-p2
+	chmod -w *.out run.sh 2>/dev/null
+}
+
+scanAndDoProject() {
+	# pwd: BASE_PATH/eval
+	# param: func proj1-p2 proj2-p1 ...
+	local scanFunc=$1
+	shift
+	while [ "$1" ]; do
+		if [ -d "$1" ]; then
+			cd $1
+			echo "Entering `pwd`"
+			$scanFunc
+			cd ..
+		else
+			echo "$1 is not a directory, skipped"
+		fi
+		shift
+	done
+}
+
+doStartParamPrepare() {
+	# pwd: BASE_PATH/eval/proj1-p2
+	# param: MSE-1
+	# called by: doStartParam
+	# global var: proj
+
+	echo "preparing $1 ..."
+
+	local benchSet=${1%%-*} # MSE
+	local listFile="$BASE_PATH/data/$benchSet/list"  # BASE_PATH/data/MSE/list
+	if [ ! -f "$listFile" ]; then
+		echo "ERROR $listFile not found"
+		return 1
+	fi
+
+	mkdir -p $1/log
+
+	local paramCnt=0
+	while read row; do
+		local rowPath="$BASE_PATH/data/$benchSet/files" # BASE_PATH/data/MSE/files
+		local rowBasename=${row%% *} # a.cnf
+		local rowFilename="$rowPath/$rowBasename" # BASE_PATH/data/MSE/files/a.cnf
+
+		if [ ! -f "$rowFilename" ]; then
+			echo "ERROR $rowFilename not found"
+			return 2
+		fi
+
+		local storeFilename="`pwd`/$1/log/$rowBasename.res" # BASE_PATH/eval/proj1-p2/MSE-1/log/a.cnf.res
+		if [ -f "$storeFilename" -o -f "$storeFilename.xz" ]; then
+			echo "$storeFilename exists, skipped..."
+			continue
+		fi
+
+		storeList[execCnt]=$storeFilename
+
+		local out
+		if [ -x "run.sh" ]; then
+			out='run.sh'
+		else
+			if [ -f "run.sh" ]; then
+				echo "ERROR: run.sh exists but it is not execuatable"
+				return 3
+			fi
+			out=$PROJ.out
+			if [ ! -x "$out" ]; then
+				echo "ERROR: executable $out not found. Current working in `pwd`"
+				return 3
+			fi
+		fi
+		execList[execCnt]="`pwd`/$out $rowPath/$row"
+		[ -f $1/param ] && execList[execCnt]="${execList[execCnt]} `cat $1/param | head -n1`"
+		
+		paramCnt=$((paramCnt+1))
+		execCnt=$((execCnt+1))
+	done < $listFile
+
+	if [ $paramCnt -gt 0 ]; then
+		paramList[paramListCnt]="$1"
+		paramListCnt=$((paramListCnt+1))
+	fi
+}
+
+doStartParamGenExecStr() {
+	local i
+	for ((i = 0; i < execCnt; i++)); do
+		echo "$BASE_PATH/script/run.sh $i $execCnt '${execList[i]}' '${storeList[i]}'"
+	done
+}
+
+doStartParam() {
+	# pwd: BASE_PATH/eval/proj1-p2
+	# param: (empty for all), or MSE-1 MSE-2 MSE-3 ...
+
+	parseProjDirectory || return
+	markReadOnly
+
+	if [ ! -x run.sh -a ! -x $PROJ.out ]; then
+		echo "No executable binary found, skipped `pwd`"
+		return 1
+	fi
+
+	local execList=()
+	local storeList=()
+	local execCnt=0
+
+	local paramList=()
+	local paramListCnt=0
+
+	if [ $# -eq 0 ]; then
+		local p
+		for p in `ls -d */ 2>/dev/null`; do  # MSE-1234
+			if ! doStartParamPrepare $(basename "$p"); then
+				echo "Error occur in `pwd`"
+				return 2
+			fi
+		done
+	else
+		while [ "$1" ]; do  # MSE-1234
+			if [ -d "$1" ]; then
+				if ! doStartParamPrepare "$1"; then
+					echo "Error occur in `pwd`"
+					return 2
+				fi
+			fi
+			shift
+		done
+	fi
+
+	if [ $execCnt -gt 0 ]; then
+		# fill with dummy run
+		while [ $((execCnt % PARA)) -gt 0 ]; do
+			execList[execCnt]=${execList[execCnt-1]}
+			storeList[execCnt]='/dev/null'
+			execCnt=$((execCnt+1))
+		done
+
+		echo "Going to run $execCnt tasks within `pwd` with $PARA process(es)"
+		doStartParamGenExecStr | xargs -d'\n' -n1 -P$PARA bash -c 2>&1
+
+		local i
+		for ((i = 0; i < paramListCnt; i++)); do
+			doCollectOne "${paramList[i]}"
+		done
+	else
+		echo "Nothing to start, skipped `pwd`"
+	fi
+}
+
+doStart() {
+	{
+		echo "$$ Waiting for lock at `date`"
+		flock -x 233
+		echo "$$ Get lock at `date`"
+		if isInEvalDirectory; then
+			scanAndDoProject doStartParam $@
+		elif isInProjectDirectory; then
+			doStartParam $@
+		else
+			echo 'start function is not support in this directory'
+			return
+		fi
+	} 233>$BASE_PATH/script/.evalock
+}
+
+doAdd() {
+	# pwd: BASE_PATH/eval/proj1-p2
+	# param: MSE p1 p2 ...
+	mustInProjectDirectory || return
+	markReadOnly
+	parseProjDirectory || return
+
+	if [ ! -x run.sh -a ! -x $PROJ.out ]; then
+		echo "No executable binary found, add operation terminated"
+		return 0
+	fi
+
+	local benchSet=$1
+	shift
+
+	if [ -z "$benchSet" ]; then
+		echo "usage: eva add benchmarkSet [param]"
+		return 1
+	fi
+
+	if [ ! -f "$BASE_PATH/data/$benchSet/list" ]; then
+		echo "$BASE_PATH/data/$benchSet/list not found"
+		return 2
+	fi
+
+	# find the greatest ID
+	local greatestParamId=$(ls -d $benchSet-*/ 2>/dev/null | sort | tail -n1 | sed -e 's/^[^-]*-0*//' -e 's@/$@@') # 123 (without zero in the front)
+	if [ "$greatestParamId" ]; then
+		paramId=$((greatestParamId+1))
+	else
+		if [ -d "$benchSet-0000" ]; then
+			paramId=1
+		else
+			paramId=0
+		fi
+	fi
+
+	local paramDir=$benchSet-`printf %04d $paramId`
+	mkdir $paramDir
+	if [ $# -gt 0 ]; then
+		echo "$@" > $paramDir/param
+		chmod -w $paramDir/param
+		echo "Add $paramDir with parameter: $@"
+	else
+		echo "Add $paramDir with no parameter"
+	fi
+}
+
+doCollectOne() {
+	# pwd: eval/proj1-p2
+	# param: MSE-1234 (only one parameter is allowed)
+	echo "$1: collecting in `pwd`"
+
+	local benchSet=${1%%-*} # MSE
+
+	local list="$BASE_PATH/data/$benchSet/list"
+	if [ ! -f "$list" ]; then
+		echo "$1: $list not found"
+		return 1
+	fi
+
+	local sumFile="$1/$(basename `pwd`)--$1--$MACHINE.sum" # MSE-1234/proj1-p2--MSE-1234--m1.sum
+	if [ -f "$sumFile" ]; then
+		echo "$1: $sumFile exists, skipped"
+		return 2
+	fi
+
+	if [ -x "./collect.sh" ]; then
+		echo "collect.sh found, EVA will use it instead of the default collecting strategy"
+	fi
+
+	local line
+	local cnt=0
+	local res=()
+	while read line; do
+		local rowFile="${line%% *}" # a.cnf
+		local resFile="$1/log/$rowFile.res" # MSE-1234/log/a.cnf.res
+		if [ -f "$resFile" ]; then
+			if [ -x "./collect.sh" ]; then
+				res[cnt]="$(./collect.sh "$resFile")"
+			else
+				res[cnt]="$(tail -n1 "$resFile")"
+			fi
+			cnt=$((cnt+1))
+		else
+			echo "$1: ERROR $resFile not found, collect terminated"
+			return 3
+		fi
+	done < "$list"
+	local i
+	for ((i = 0; i < cnt; i++)); do
+		echo "${res[i]}" >> "$sumFile"
+	done
+	chmod -w -R "$1"
+	echo "$1: collected $cnt files"
+}
+
+doCollect() {
+	# pwd: BASE_PATH/eval/proj-p2
+	# param: MSE-1 MSE-2 ...
+	mustInProjectDirectory || return
+	while [ "$1" ]; do
+		local pDir=${1%/}
+		if [ -d "$pDir/log" ]; then
+			doCollectOne "$pDir"
+		else
+			echo "ERROR $pDir/log not found or it is not a directory"
+		fi
+		shift
+	done
+}
+
+doHelp() {
+	echo "EVA is designed by femrat, for algorithm evaluation
+
+Usage: eva (add|show|start|scp)
+
+In eval/ directory:
+    * eva start project1-p1 [project2-p2] ...
+    Start all target in the projects
+"
+
+local p
+for p in `ls $BASE_PATH/script/plugin/*.sh 2>/dev/null`; do
+	echo "    * eva $(basename $p .sh)
+    This is a plugin, see its readme for more.
+"
+done
+
+echo " In eval/project1-p1 directory:
+    * eva add B [param1] [param2] ...
+    Add new target with benchmark B using the given parameters (or no parameters)
+
+    * eva start [B-1234] [B-2345] ...
+    Start the given target. If no target is given, all targets will be used.
+"
+
+local p
+for p in `ls $BASE_PATH/script/plugin/project/*.sh 2>/dev/null`; do
+	echo "    * eva $(basename $p .sh)
+    This is a plugin, see its readme for more.
+"
+done
+
+echo "
+Machine is $MACHINE
+EVA BASE PATH is $BASE_PATH
+Current working directory: `pwd`"
+}
+
+doRun() {
+	local runAction="$1"
+	shift
+	local runEvalScript=$BASE_PATH/script/plugin/$runAction.sh
+	local runProjectScript=$BASE_PATH/script/plugin/project/$runAction.sh
+	if isInEvalDirectory; then
+		if [ -x "$runEvalScript" ]; then
+			$runEvalScript $@
+		elif [ -x "$runProjectScript" ]; then
+			scanAndDoProject $runProjectScript $@
+		else
+			echo "$runAction plugin not found in $runProjectScript"
+		fi
+	elif isInProjectDirectory; then
+		if [ -x "$runProjectScript" ]; then
+			$runProjectScript $@
+		else
+			echo "$runAction plugin not found in $runProjectScript"
+		fi
+	else
+		echo "$runAction function is not supported in this directory"
+	fi
+}
+
+
+####################################################################################
+
+action=$1
+
+echo "
+========================================
+`date`
+Command: $0 $@
+Action: $action" >> $EVALOGFILE
+
+shift
+
+{
+	case "$action" in
+		'start')
+			doStart $@
+			;;
+		'add')
+			doAdd $@
+			;;
+		'col') # for debug use
+			doCollect $@
+			;;
+		*)
+			if [ "$action" ]; then
+				doRun $action $@
+			else
+				doHelp
+			fi
+			;;
+	esac
+} 2>&1 | tee -a $EVALOGFILE
+
+echo "`date` EVA Quit" >> $EVALOGFILE
+
