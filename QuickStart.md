@@ -46,7 +46,7 @@ ls * > ../list
 
 # 建立一个项目
 
-- 准备一个待测程序，例如ALG\_1.out。假设该程序位于/home/user/ALG\_1.out。
+- 准备一个待测程序，例如`ALG_1.out`。假设该程序位于`/home/user/ALG_1.out`。
 
 - 创建项目，并且指定该项目的并行数量是4个进程。该项目中的每个文件夹都指定了一个测试集和参数组合：
 ```
@@ -62,10 +62,27 @@ eva add MSE
 eva add MSE 1 2 3
 eva add MSE 4 5 6
 ```
+`eva add`命令需要最少一个参数，即数据集名。
+命令执行后，会得到`MSE-0000`、`MSE-0001`、`MSE-0002`三个文件夹。
 
 - 查看实验参数：`eva show`。
 
 - 运行当前项目下的所有实验：`eva start`。
+假设MSE实例集中有一个实例是a.in，它在不同实验中被作为输入时，执行的命令如下：
+EVA在运行`MSE-0000`时：
+```
+/home/user/EVA/eval/ALG_1-p4/ALG_1.out /home/user/EVA/data/MSE/files/a.in &> /home/user/EVA/eval/ALG_1-p4/MSE-0000/log/a.in.res
+```
+
+EVA在运行`MSE-0001`时：
+```
+/home/user/EVA/eval/ALG_1-p4/ALG_1.out /home/user/EVA/data/MSE/files/a.in 1 2 3 &> /home/user/EVA/eval/ALG_1-p4/MSE-0001/log/a.in.res
+```
+
+EVA在运行`MSE-0002`时：
+```
+/home/user/EVA/eval/ALG_1-p4/ALG_1.out /home/user/EVA/data/MSE/files/a.in 4 5 6 &> /home/user/EVA/eval/ALG_1-p4/MSE-0002/log/a.in.res
+```
 
 - 待EVA退出，此时所有结果都已经准备就绪，在`MSE-000x/ALG_1-p4--MSE-000x--machine.sum`中。
 该`.sum`文件即为该实验下所有输出的最后一行的汇总。
