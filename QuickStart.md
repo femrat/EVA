@@ -1,6 +1,6 @@
 # EVA快速开始
 
-本文档不生动地描述了如何使用EVA，包括了创建一个名为MSE的数据集，开始一个项目，添加3个实验，运行项目和回收结果。
+本文档不生动地描述了如何使用EVA，包括了创建一个名为`MSE`的数据集，开始一个项目，添加3个实验，运行项目和回收结果。
 
 - 数据集是一个实例集合，一般由多个文件组成。运行时，每个实例将被依次作为第一个参数传入项目程序。
 - 实验指的是，对于特定程序、并行数量、测试集以及参数组合，保存结果的文件夹。
@@ -14,20 +14,20 @@ EVA对项目程序存在以下**约定**：
 - 项目程序输出的所有字符都将被认定是对实例文件的解的一部分，包括管道`1`（`stdout`）和`2`（`stderr`）中的所有数据。
 - 输出的最后一行为算法对输入实例的解质量的总结，如`argv[1] value time`，其中`value`是解质量，`time`是时间。在运行任务结束时，每个输出的最后一行将被整理成`.sum`文件。
 
-对于项目程序，EVA推荐使用**静态链接**，并且在运行的初期打印所有变量，已备后期调阅。
+对于项目程序，EVA推荐使用**静态链接**，并且在运行的初期**打印所有传入的参数**，已备后期调阅。
 
 
 # 部署EVA
 
-- 复制EVA到指定目录，这里假设为/home/user/EVA。此时该目录下应有一个script文件夹。
+- 复制EVA到指定目录，这里假设为`/home/user/EVA`。此时该目录下应有一个`script`文件夹。
 
 - 添加eva到PATH，执行以下命令：
 ```
-echo "PATH=$PATH:~/EVA/script" >> ~/.bashrc
+echo "PATH=$PATH:/home/user/EVA/script" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-- 运行`eva`命令，应能看到EVA的简略帮助，同时EVA提示config丢失，已重建。
+- 执行`eva`命令，应能看到EVA的简略帮助，同时EVA提示config丢失，已重建。
 
 - `cd /home/user/EVA/data`。
 
@@ -68,7 +68,8 @@ eva add MSE 4 5 6
 - 查看实验参数：`eva show`。
 
 - 运行当前项目下的所有实验：`eva start`。
-假设MSE实例集中有一个实例是a.in，它在不同实验中被作为输入时，执行的命令如下：
+假设`MSE`实例集中有一个实例是`a.in`，它在不同实验中被作为输入时，执行的命令如下：
+
 EVA在运行`MSE-0000`时：
 ```
 /home/user/EVA/eval/ALG_1-p4/ALG_1.out /home/user/EVA/data/MSE/files/a.in &> /home/user/EVA/eval/ALG_1-p4/MSE-0000/log/a.in.res
@@ -86,13 +87,16 @@ EVA在运行`MSE-0002`时：
 
 - 待EVA退出，此时所有结果都已经准备就绪，在`MSE-000x/ALG_1-p4--MSE-000x--machine.sum`中。
 该`.sum`文件即为该实验下所有输出的最后一行的汇总。
-其中x为实验序号，machine为机器名。
-machine会在第一次运行eva时，被写入到EVA/script/config中，默认值为`hostname`命令的输出。
-machine被设计为区分多台实验机的输出。
-当多台机器上的相同的程序、并行数量、实例集被汇总拷贝汇总到一个文件夹内时，此完整的命名方案将区分每个`.sum`文件。
+其中`x`为实验序号，`machine`为机器名。
 
-- 汇总结果，将所有结果统一复制到10.0.0.2，使用user用户名登录：`eva scp MSE* user@10.0.0.2:`。当然这里你也可以复制到本地目录，如`/tmp/res`：`eva scp MSE* /tmp/res`。
+`machine`会在第一次运行`eva`时，被写入到`EVA/script/config`中，默认值为`hostname`命令的输出。
+`machine`被设计为区分来自不同实验机的`.sum`文件，即使它们被统一拷贝至同一个文件夹也不会重名。
+
+- 汇总结果，将所有结果统一复制到`10.0.0.2`，使用`user`用户名登录：`eva scp MSE* user@10.0.0.2:`。当然这里你也可以复制到本地目录，如`/tmp/res`：`eva scp MSE* /tmp/res`。
 
 - 恭喜完成了一次实验。
 
-
+- 如需压缩，请在`/home/user/EVA/eval/ALG_1-p4/`目录中执行`eva xz`命令，或在`/home/user/EVA/eval/`目录中执行`eva xz ALG_1-p4`命令。
+压缩将采用`xz`，请确保`xz`已经安装。
+压缩后，`.res`文件将变为`.res.xz`。
+如需解压，请使用`eva unxz`。

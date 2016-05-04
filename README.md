@@ -12,5 +12,7 @@ EVA希望世界和平。。。（大雾）。。。
 EVA希望，即使跑再多的算法版本、再多的数据集、再多的参数组合，都不会乱成一团糟，每一次运行都应是完整可靠可追溯的，并且每份结果都被放在恰当的文件夹里。
 
 # 快速开始
-请阅读 [QuickStart.md](https://github.com/femrat/EVA/blob/master/QuickStart.md)
+请阅读 [QuickStart.md](https://github.com/femrat/EVA/blob/master/QuickStart.md) 。
 
+# 授权协议
+GPLv3，请见 [LICENSE](https://github.com/femrat/EVA/blob/master/LICENSE) 文件。
