@@ -39,7 +39,7 @@ fi
 
 mkdir -v "$dir"
 
-echo "copy $out -> $dir/$out"
+echo "copy $out -> $dir/$(basename "$out")"
 if scp $out $dir; then
 	chmod -w $dir/*
 else
