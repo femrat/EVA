@@ -97,7 +97,9 @@ doStartParamPrepare() {
 	# called by: doStartParam
 	# global var: proj
 
-	echo "preparing $1 ..."
+	local paramDir="${1%/}"
+
+	echo "preparing $paramDir ..."
 
 	local benchSet=${1%%-*} # MSE
 	local listFile="$BASE_PATH/data/$benchSet/list"  # BASE_PATH/data/MSE/list
@@ -106,7 +108,7 @@ doStartParamPrepare() {
 		return 1
 	fi
 
-	mkdir -p $1/log
+	mkdir -p $paramDir/log
 
 	local paramCnt=0
 	while read row; do
@@ -119,7 +121,7 @@ doStartParamPrepare() {
 			return 2
 		fi
 
-		local storeFilename="`pwd`/$1/log/$rowBasename.res" # BASE_PATH/eval/proj1-p2/MSE-1/log/a.cnf.res
+		local storeFilename="`pwd`/$paramDir/log/$rowBasename.res" # BASE_PATH/eval/proj1-p2/MSE-1/log/a.cnf.res
 		if [ -f "$storeFilename" -o -f "$storeFilename.xz" ]; then
 			echo "$storeFilename exists, skipped..."
 			continue
@@ -142,14 +144,14 @@ doStartParamPrepare() {
 			fi
 		fi
 		execList[execCnt]="`pwd`/$out $rowPath/$row"
-		[ -f $1/param ] && execList[execCnt]="${execList[execCnt]} `cat $1/param | head -n1`"
+		[ -f $paramDir/param ] && execList[execCnt]="${execList[execCnt]} `cat $paramDir/param | head -n1`"
 		
 		paramCnt=$((paramCnt+1))
 		execCnt=$((execCnt+1))
 	done < $listFile
 
 	if [ $paramCnt -gt 0 ]; then
-		paramList[paramListCnt]="$1"
+		paramList[paramListCnt]="$paramDir"
 		paramListCnt=$((paramListCnt+1))
 	fi
 }
