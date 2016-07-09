@@ -11,6 +11,11 @@ fi
 out="$1"
 para="$2"
 
+if [ "${out: -4}" != '.out' ]; then
+	echo "sorry, need .out file. the given file does not end with .out"
+	exit 1
+fi
+
 if echo "$out" | grep ':' >/dev/null; then
 	# remote file
 	name=$(basename "${out##*:}")
